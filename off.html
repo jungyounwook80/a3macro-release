@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>원격 종료</title>
+<style>
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;background:#151820;color:#fff}
+  .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+  .card{width:100%;max-width:360px;text-align:center}
+  h1{font-size:20px;margin:0 0 8px}
+  p{color:#aab;line-height:1.5;margin:0 0 24px}
+  button{font-size:18px;font-weight:bold;padding:16px 28px;border:0;border-radius:12px;color:#fff;cursor:pointer;width:100%}
+  .off{background:#c0392b}
+  .off:active{background:#a5321f}
+  .note{color:#667;margin-top:16px;font-size:12px}
+  .msg{margin-top:18px;font-size:16px;min-height:24px}
+  .ok{color:#7fe6a2;font-weight:bold}
+  .err{color:#ff8a8a}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>컴퓨터 원격 종료</h1>
+    <p>아래 버튼을 누르면 집 컴퓨터가<br>실행 중인 것을 모두 닫고 꺼집니다.</p>
+    <button id="btn" class="off">컴퓨터 끄기</button>
+    <div class="note">실수로 이 페이지가 열려도, 버튼을 누르기 전엔 꺼지지 않아요.</div>
+    <div id="msg" class="msg"></div>
+  </div>
+</div>
+<script>
+  // 링크의 t= 값(비밀 채널). 안전하게 영문/숫자만 남긴다.
+  var t = (new URLSearchParams(location.search).get("t") || "").replace(/[^a-z0-9]/gi, "");
+  var btn = document.getElementById("btn");
+  var msg = document.getElementById("msg");
+  if (!t) {
+    btn.disabled = true;
+    msg.textContent = "링크가 올바르지 않습니다.";
+    msg.className = "msg err";
+  }
+  btn.addEventListener("click", function () {
+    if (!t) return;
+    btn.disabled = true;
+    msg.textContent = "신호 보내는 중...";
+    msg.className = "msg";
+    // ntfy.sh 개인 채널로 종료 신호를 발행(POST). 매크로가 이 채널을 듣고 있다가 종료한다.
+    fetch("https://ntfy.sh/" + t, { method: "POST", body: "go" })
+      .then(function (r) {
+        if (r.ok) {
+          msg.textContent = "✅ 신호를 보냈습니다. 잠시 뒤(최대 30초) 컴퓨터가 꺼집니다.";
+          msg.className = "msg ok";
+        } else {
+          throw new Error("bad");
+        }
+      })
+      .catch(function () {
+        msg.textContent = "전송 실패. 인터넷을 확인하고 다시 눌러주세요.";
+        msg.className = "msg err";
+        btn.disabled = false;
+      });
+  });
+</script>
+</body>
+</html>
