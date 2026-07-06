@@ -3,62 +3,129 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>원격 종료</title>
+<title>내 컴퓨터 원격 관리</title>
 <style>
   html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;background:#151820;color:#fff}
   .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
-  .card{width:100%;max-width:360px;text-align:center}
+  .card{width:100%;max-width:420px;text-align:center}
   h1{font-size:20px;margin:0 0 8px}
-  p{color:#aab;line-height:1.5;margin:0 0 24px}
-  button{font-size:18px;font-weight:bold;padding:16px 28px;border:0;border-radius:12px;color:#fff;cursor:pointer;width:100%}
+  p{color:#aab;line-height:1.5;margin:0 0 20px}
+  button{font-size:17px;font-weight:bold;padding:15px 24px;border:0;border-radius:12px;color:#fff;cursor:pointer;width:100%;box-sizing:border-box}
+  .shot{background:#2e6b8a;margin-bottom:12px}
+  .shot:active{background:#255870}
   .off{background:#c0392b}
   .off:active{background:#a5321f}
-  .note{color:#667;margin-top:16px;font-size:12px}
-  .msg{margin-top:18px;font-size:16px;min-height:24px}
+  .gray{background:#333;margin-top:8px}
+  .confirm{display:none;background:#241a1a;border:1px solid #c0392b;border-radius:12px;padding:16px;margin-top:12px}
+  .confirm.show{display:block}
+  .confirm p{color:#ffb3a7;margin:0 0 14px;font-size:15px}
+  .note{color:#667;margin-top:16px;font-size:12px;line-height:1.5}
+  .msg{margin-top:14px;font-size:15px;min-height:22px}
   .ok{color:#7fe6a2;font-weight:bold}
   .err{color:#ff8a8a}
-  .hide{display:none}
+  #shotimg{width:100%;border-radius:10px;margin-top:12px;display:none;border:1px solid #345}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>컴퓨터 원격 종료</h1>
-    <p>아래 버튼을 누르면 집 컴퓨터가<br>실행 중인 것을 모두 닫고 꺼집니다.</p>
-    <button id="btn" class="off">컴퓨터 끄기</button>
-    <div class="note">실수로 이 페이지가 열려도, 버튼을 누르기 전엔 꺼지지 않아요.</div>
+    <h1>내 컴퓨터 원격 관리</h1>
+    <p>매크로가 켜져 있는 집 컴퓨터를 밖에서 확인하고 끌 수 있어요.</p>
+
+    <button id="shotbtn" class="shot">📷 화면 스샷 보기</button>
+    <img id="shotimg" alt="컴퓨터 화면">
+
+    <button id="offbtn" class="off">🔌 컴퓨터 끄기</button>
+    <div id="confirm" class="confirm">
+      <p>정말 끄시겠어요?<br>실행 중인 게임이 모두 닫히고 전원이 꺼집니다.</p>
+      <button id="offyes" class="off">예, 끕니다</button>
+      <button id="offno" class="gray">취소</button>
+    </div>
+
     <div id="msg" class="msg"></div>
+    <div class="note">실수로 이 페이지가 열려도 버튼을 누르기 전엔 아무 일도 없어요.<br>끄기는 신호 후 컴퓨터 화면에도 20초 취소 버튼이 뜹니다.</div>
   </div>
 </div>
 <script>
   // 링크의 t= 값(비밀 채널). 안전하게 영문/숫자만 남긴다.
   var t = (new URLSearchParams(location.search).get("t") || "").replace(/[^a-z0-9]/gi, "");
-  var btn = document.getElementById("btn");
   var msg = document.getElementById("msg");
+  var shotbtn = document.getElementById("shotbtn");
+  var shotimg = document.getElementById("shotimg");
+  var offbtn = document.getElementById("offbtn");
+  var confirmBox = document.getElementById("confirm");
+
+  function setMsg(text, cls) { msg.textContent = text; msg.className = "msg " + (cls || ""); }
+
   if (!t) {
-    btn.disabled = true;
-    msg.textContent = "링크가 올바르지 않습니다.";
-    msg.className = "msg err";
+    shotbtn.disabled = true;
+    offbtn.disabled = true;
+    setMsg("링크가 올바르지 않습니다.", "err");
   }
-  btn.addEventListener("click", function () {
+
+  // ── 화면 스샷: 응답 채널({t}-shotr)을 먼저 듣기 시작한 뒤 요청({t}-shot)을 보낸다 ──
+  var es = null, shotTimer = null;
+  shotbtn.addEventListener("click", function () {
     if (!t) return;
-    btn.disabled = true;
-    msg.textContent = "신호 보내는 중...";
-    msg.className = "msg";
-    // ntfy.sh 개인 채널로 종료 신호를 발행(POST). 매크로가 이 채널을 듣고 있다가 종료한다.
+    shotbtn.disabled = true;
+    setMsg("컴퓨터에 요청하는 중...");
+    if (es) { es.close(); es = null; }
+    if (shotTimer) { clearTimeout(shotTimer); }
+    es = new EventSource("https://ntfy.sh/" + t + "-shotr/sse");
+    es.onopen = function () {
+      fetch("https://ntfy.sh/" + t + "-shot", { method: "POST", body: "shot" })
+        .then(function (r) { if (!r.ok) throw new Error("bad"); setMsg("화면 찍는 중... (몇 초 걸려요)"); })
+        .catch(function () { finishShot(); setMsg("요청 전송 실패. 인터넷을 확인해 주세요.", "err"); });
+    };
+    es.onmessage = function (e) {
+      try {
+        var m = JSON.parse(e.data);
+        if (m && m.attachment && m.attachment.url) {
+          shotimg.onload = function () { setMsg("✅ 방금 화면입니다.", "ok"); };
+          shotimg.src = m.attachment.url;
+          shotimg.style.display = "block";
+          finishShot();
+        }
+      } catch (_) {}
+    };
+    es.onerror = function () { /* 순단은 EventSource가 알아서 재접속 */ };
+    shotTimer = setTimeout(function () {
+      finishShot();
+      setMsg("응답이 없어요. 컴퓨터에서 매크로가 켜져 있고 최신 버전인지 확인해 주세요.", "err");
+    }, 40000);
+  });
+  function finishShot() {
+    if (es) { es.close(); es = null; }
+    if (shotTimer) { clearTimeout(shotTimer); shotTimer = null; }
+    shotbtn.disabled = false;
+  }
+
+  // ── 컴퓨터 끄기: 한 번 더 확인한 뒤에만 신호를 보낸다 ──
+  offbtn.addEventListener("click", function () {
+    if (!t) return;
+    confirmBox.className = "confirm show";
+    setMsg("");
+  });
+  document.getElementById("offno").addEventListener("click", function () {
+    confirmBox.className = "confirm";
+    setMsg("취소했습니다.");
+  });
+  document.getElementById("offyes").addEventListener("click", function () {
+    if (!t) return;
+    confirmBox.className = "confirm";
+    offbtn.disabled = true;
+    setMsg("종료 신호 보내는 중...");
     fetch("https://ntfy.sh/" + t, { method: "POST", body: "go" })
       .then(function (r) {
         if (r.ok) {
-          msg.textContent = "✅ 신호를 보냈습니다. 잠시 뒤(최대 30초) 컴퓨터가 꺼집니다.";
-          msg.className = "msg ok";
+          setMsg("✅ 신호를 보냈습니다. 잠시 뒤(최대 30초) 컴퓨터가 꺼집니다.", "ok");
         } else {
           throw new Error("bad");
         }
       })
       .catch(function () {
-        msg.textContent = "전송 실패. 인터넷을 확인하고 다시 눌러주세요.";
-        msg.className = "msg err";
-        btn.disabled = false;
+        setMsg("전송 실패. 인터넷을 확인하고 다시 눌러주세요.", "err");
+        offbtn.disabled = false;
       });
   });
 </script>
