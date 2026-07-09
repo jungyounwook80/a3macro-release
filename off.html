@@ -13,6 +13,9 @@
   button{font-size:17px;font-weight:bold;padding:15px 24px;border:0;border-radius:12px;color:#fff;cursor:pointer;width:100%;box-sizing:border-box}
   .shot{background:#2e6b8a;margin-bottom:12px}
   .shot:active{background:#255870}
+  .winrow{display:flex;gap:8px;margin-bottom:12px}
+  .winrow button{flex:1;font-size:15px;padding:12px 0;background:#3a5a3a;margin:0}
+  .winrow button:active{background:#2e482e}
   .off{background:#c0392b}
   .off:active{background:#a5321f}
   .gray{background:#333;margin-top:8px}
@@ -33,6 +36,12 @@
     <p>매크로가 켜져 있는 집 컴퓨터를 밖에서 확인하고 끌 수 있어요.</p>
 
     <button id="shotbtn" class="shot">📷 화면 스샷 보기</button>
+    <div class="winrow">
+      <button class="winshot" data-slot="1">창1</button>
+      <button class="winshot" data-slot="2">창2</button>
+      <button class="winshot" data-slot="3">창3</button>
+      <button class="winshot" data-slot="4">창4</button>
+    </div>
     <img id="shotimg" alt="컴퓨터 화면">
 
     <button id="offbtn" class="off">🔌 컴퓨터 끄기</button>
@@ -60,28 +69,34 @@
   if (!t) {
     shotbtn.disabled = true;
     offbtn.disabled = true;
+    Array.prototype.forEach.call(document.querySelectorAll(".winshot"), function (b) { b.disabled = true; });
     setMsg("링크가 올바르지 않습니다.", "err");
   }
 
   // ── 화면 스샷: 응답 채널({t}-shotr)을 먼저 듣기 시작한 뒤 요청({t}-shot)을 보낸다 ──
+  // body: "shot"=화면 전체, "shot1"~"shot4"=그 게임창만(매크로 v3.29+, 구버전은 전체로 찍힘)
   var es = null, shotTimer = null;
-  shotbtn.addEventListener("click", function () {
+  var shotBtns = [shotbtn].concat(Array.prototype.slice.call(document.querySelectorAll(".winshot")));
+  function setShotBtns(disabled) {
+    for (var i = 0; i < shotBtns.length; i++) shotBtns[i].disabled = disabled;
+  }
+  function doShot(body, label) {
     if (!t) return;
-    shotbtn.disabled = true;
+    setShotBtns(true);
     setMsg("컴퓨터에 요청하는 중...");
     if (es) { es.close(); es = null; }
     if (shotTimer) { clearTimeout(shotTimer); }
     es = new EventSource("https://ntfy.sh/" + t + "-shotr/sse");
     es.onopen = function () {
-      fetch("https://ntfy.sh/" + t + "-shot", { method: "POST", body: "shot" })
-        .then(function (r) { if (!r.ok) throw new Error("bad"); setMsg("화면 찍는 중... (몇 초 걸려요)"); })
+      fetch("https://ntfy.sh/" + t + "-shot", { method: "POST", body: body })
+        .then(function (r) { if (!r.ok) throw new Error("bad"); setMsg(label + " 찍는 중... (몇 초 걸려요)"); })
         .catch(function () { finishShot(); setMsg("요청 전송 실패. 인터넷을 확인해 주세요.", "err"); });
     };
     es.onmessage = function (e) {
       try {
         var m = JSON.parse(e.data);
         if (m && m.attachment && m.attachment.url) {
-          shotimg.onload = function () { setMsg("✅ 방금 화면입니다.", "ok"); };
+          shotimg.onload = function () { setMsg("✅ 방금 " + label + "입니다.", "ok"); };
           shotimg.src = m.attachment.url;
           shotimg.style.display = "block";
           finishShot();
@@ -93,11 +108,17 @@
       finishShot();
       setMsg("응답이 없어요. 컴퓨터에서 매크로가 켜져 있고 최신 버전인지 확인해 주세요.", "err");
     }, 40000);
+  }
+  shotbtn.addEventListener("click", function () { doShot("shot", "화면"); });
+  Array.prototype.forEach.call(document.querySelectorAll(".winshot"), function (b) {
+    b.addEventListener("click", function () {
+      doShot("shot" + b.getAttribute("data-slot"), "게임창" + b.getAttribute("data-slot"));
+    });
   });
   function finishShot() {
     if (es) { es.close(); es = null; }
     if (shotTimer) { clearTimeout(shotTimer); shotTimer = null; }
-    shotbtn.disabled = false;
+    setShotBtns(false);
   }
 
   // ── 컴퓨터 끄기: 한 번 더 확인한 뒤에만 신호를 보낸다 ──
